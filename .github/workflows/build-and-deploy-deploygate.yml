@@ -1,0 +1,76 @@
+name: Unity Build & Deploy DeployGate
+on:
+  workflow_dispatch:
+    inputs:
+      build_version:
+        description: 'Enter build version (ex: 1.0.3)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build-and-deploy:
+    name: Unity Build & Deploy Firebase
+    runs-on: self-hosted
+        
+    env:
+      BUILD_VERSION: ${{ github.event.inputs.build_version }}      
+
+    steps:
+    # -----------------------------
+    # 1. Checkout source
+    # -----------------------------
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # -----------------------------
+    # 2. Create build folder
+    # -----------------------------
+    - name: Create build folder
+      shell: cmd
+      run: |
+        if not exist Build\Android (
+          mkdir Build\Android
+        )
+
+    # -----------------------------
+    # 3. Build Android
+    # -----------------------------
+    - name: Build Unity Project (Android)
+      shell: cmd
+      run: |
+        echo === Building Android ===
+        echo Build Version: %BUILD_VERSION%
+
+        "C:\Program Files\Unity\Hub\Editor\6000.2.7f2\Editor\Unity.exe" ^
+          -quit -batchmode -nographics ^
+          -projectPath "%GITHUB_WORKSPACE%" ^
+          -executeMethod BuildPlayer.AutoBuildAPK ^
+          -logFile Build\Android\unity-build.log
+
+    # -----------------------------
+    # 4. Upload Artifact
+    # -----------------------------
+    - name: Upload Android Build
+      uses: actions/upload-artifact@v4
+      with:
+        name: Unity-Android-Build
+        path: Build\Android\StarForce.apk
+
+    # -----------------------------
+    # 5. Upload APK to Firebase App Distribution
+    # -----------------------------
+    - name: Upload APK to Firebase App Distribution
+      shell: cmd
+      env:
+        FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+        FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      run: |
+        echo === Uploading to Firebase App Distribution ===
+
+        echo %FIREBASE_SERVICE_ACCOUNT% > firebase_key.json
+
+        firebase appdistribution:distribute Build\Android\StarForce.apk ^
+          --app %FIREBASE_APP_ID% ^
+          --release-notes "CI Build %GITHUB_RUN_NUMBER% - Version %BUILD_VERSION%" ^
+          --groups "testers" ^
+          --token "$(cat firebase_key.json)"
